@@ -24,4 +24,4 @@ class SubLoader(torchvision.datasets.CIFAR10):
             mask = ~(labels.reshape(-1, 1) == exclude).any(axis=1)
 
             self.test_data = self.test_data[mask]
-            self.test_labels = labels[mask].tolist()"""
+            self.test_labels = labels[mask].tolist() 1"""
