@@ -10,9 +10,12 @@ from sklearn.metrics import roc_auc_score
 
 class MyResNet(nn.Module):
 
-    def __init__(self, classifyer):
+    def __init__(self, classifyer, res34or18):
         super(MyResNet, self).__init__()
-        resnet = models.resnet18(pretrained=True)
+        if(res34or18 == 18):
+            resnet = models.resnet18(pretrained=True)
+        else:
+            resnet = models.resnet34(pretrained=True)
         num_ftrs = resnet.fc.in_features
         resnet.fc = nn.Identity()
         self.features = resnet
@@ -62,7 +65,9 @@ def training_loop(
     net,
     X_train,
     y_train,
-    val_dataloader,
+    X_test,
+    y_test,
+    val_dataloader=None,
     criterion_func=nn.CrossEntropyLoss,
     optimizer_func=optim.SGD,
 ):
@@ -75,7 +80,7 @@ def training_loop(
     # Note that I moved the inferences to a function because it was too much code duplication to read.
     # calculate error before training
     auc_and_loss = infer(
-        net,  criterion, dataloader=val_dataloader)
+        net,  criterion, X=X_test, y=y_test, dataloader=val_dataloader)
     untrained_test_loss = auc_and_loss[0]
     untrained_test_auc = auc_and_loss[1]
     for epoch in range(args.num_epochs):
@@ -104,7 +109,7 @@ def training_loop(
         tr_loss[epoch] = running_tr_loss.item() / data_size
         tr_auc[epoch] = running_tr_auc.item() / data_size
         auc_and_loss = infer(
-            net, criterion, dataloader=val_dataloader)
+            net, criterion, X=X_test, y=y_test, dataloader=None)
         val_loss[epoch] = auc_and_loss[0]
         val_auc[epoch] = auc_and_loss[1]
         print(
@@ -116,9 +121,9 @@ def training_loop(
             )
             if improvement < args.early_stopping_min_improvement:
                 break
-    auc_and_loss = infer(net, criterion, dataloader=val_dataloader)
+    auc_and_loss = infer(net, criterion, X=X_test, y=y_test, dataloader=None)
     test_loss = auc_and_loss[0]
-    auc_loss = auc_and_loss[1]
+    test_auc = auc_and_loss[1]
     print(f"Stopped training after {epoch+1}/{args.num_epochs} epochs.")
     print(
         f"The loss is {untrained_test_loss:.2e} before training and {test_loss:.2e} after training."
@@ -149,8 +154,8 @@ def plot_loss_graph(train_loss_list, validation_loss_list):
 
 
 def plot_auc_graph(auc_train_list, auc_val_list):
-    plt.plot(auc_train_list, 'g', label='Training loss')
-    plt.plot(auc_val_list, 'b', label='validation loss')
+    plt.plot(auc_train_list, 'g', label='Training AUC')
+    plt.plot(auc_val_list, 'b', label='validation AUC')
     plt.title('Training and Validation AUC')
     plt.xlabel('Epochs')
     plt.ylabel('AUC')

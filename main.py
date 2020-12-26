@@ -79,7 +79,7 @@ if __name__ == '__main__':
         CIFAR10_DataLoader_Len_Limited(val_dataset, int(250*2)), batch_size=int(250*2)
     )
     classifyer = nn.Sequential(nn.Linear(512, 2))
-    net = MyResNet(classifyer)
+    net = MyResNet(classifyer, 18)
     X_extracted_features_train = torch.empty([0, 512])
     y_extracted_features_train = torch.empty([0]).long()
     X_extracted_features_test = torch.empty([0, 512])
@@ -93,21 +93,52 @@ if __name__ == '__main__':
         y_extracted_features_train = torch.cat(
             [y_extracted_features_train, y], dim=0)
 
-    """for X, y in val_dataloader:
+    for X, y in val_dataloader:
         extracted_batch_features = net.extract_features(X)
         X_extracted_features_test = torch.cat(
             [X_extracted_features_test, extracted_batch_features], dim=0)
         y_extracted_features_test = torch.cat(
             [y_extracted_features_test, y], dim=0)
     print(X_extracted_features_train.shape)
-    print(X_extracted_features_test.shape)"""
+    print(X_extracted_features_test.shape)
 
     tr_loss, val_loss, test_loss, tr_auc, val_auc, untrained_test_loss, untrained_test_auc = training_loop(
         args,
         net,
         X_extracted_features_train,
         y_extracted_features_train,
-        val_dataloader,
+        X_extracted_features_test,
+        y_extracted_features_test,
+        val_dataloader=None,
         criterion_func=nn.CrossEntropyLoss
     )
     plot_loss_graph(tr_loss, val_loss)
+    plot_auc_graph(tr_auc, val_auc)
+
+    # logistic regression with sklearn
+
+    logisticRegr = LogisticRegression(solver='lbfgs', max_iter=1000)
+    clf = logisticRegr.fit(X_extracted_features_train,
+                           y_extracted_features_train)
+    pred = clf.predict(X_extracted_features_test)
+    accuracy = clf.score(X_extracted_features_test, y_extracted_features_test)
+    auc = roc_auc_score(pred, y_extracted_features_test)
+
+    print('accuracy:', accuracy)
+    print('auc', auc)
+
+    # resnet34
+    classifyer34 = nn.Sequential(nn.Linear(512, 2))
+    net34 = MyResNet(classifyer34, 34)
+    tr_loss34, val_loss34, test_loss34, tr_auc34, val_auc34, untrained_test_loss34, untrained_test_auc34 = training_loop(
+        args,
+        net34,
+        X_extracted_features_train,
+        y_extracted_features_train,
+        X_extracted_features_test,
+        y_extracted_features_test,
+        val_dataloader=None,
+        criterion_func=nn.CrossEntropyLoss
+    )
+    plot_loss_graph(tr_loss34, val_loss34)
+    plot_auc_graph(tr_auc34, val_auc34)
