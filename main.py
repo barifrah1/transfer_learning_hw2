@@ -78,7 +78,8 @@ if __name__ == '__main__':
     val_dataloader = DataLoader(
         CIFAR10_DataLoader_Len_Limited(val_dataset, int(250*2)), batch_size=int(250*2)
     )
-    net = MyResNet()
+    classifyer = nn.Sequential(nn.Linear(512, 2))
+    net = MyResNet(classifyer)
     X_extracted_features_train = torch.empty([0, 512])
     y_extracted_features_train = torch.empty([0]).long()
     X_extracted_features_test = torch.empty([0, 512])
@@ -101,7 +102,7 @@ if __name__ == '__main__':
     print(X_extracted_features_train.shape)
     print(X_extracted_features_test.shape)"""
 
-    tr_loss, val_loss, test_loss, untrained_test_loss = training_loop(
+    tr_loss, val_loss, test_loss, tr_auc, val_auc, untrained_test_loss, untrained_test_auc = training_loop(
         args,
         net,
         X_extracted_features_train,

@@ -11,8 +11,8 @@ class CIFAR10_DataLoader_Len_Limited(Dataset):
         self.original_datset = original_datset
         self.label_to_indices = {label: np.where(np.array(self.original_datset.targets) == label)[0].tolist()
                                  for label in [0, 1]}
-        random.shuffle(self.label_to_indices[0])
-        random.shuffle(self.label_to_indices[1])
+        # random.shuffle(self.label_to_indices[0])
+        # random.shuffle(self.label_to_indices[1])
         self.ind_0 = 0
         self.ind_1 = 0
 
