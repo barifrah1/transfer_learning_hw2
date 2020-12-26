@@ -28,16 +28,29 @@ class MyResNet(nn.Module):
             return self.features(X)
 
     def forward(self, X):
-        return self.classifyer(X)
+        if(len(X.shape) != 4):
+            return self.classifyer(X)
+        else:
+            X = self.features(X)
+            return self.classifyer(X)
 
 
-def infer(net, X, y, criterion):
+def infer(net, criterion, X=None, y=None, dataloader=None):  # can pass to function dataloader or X,y
     net.eval()
     running_loss = 0
+    num_of_rows = 0
     with torch.no_grad():
-        pred = net(X)
-        loss = criterion(pred, y).item()
-    return loss
+        if(dataloader == None):
+            pred = net(X)
+            loss = criterion(pred, y).item()
+            return loss
+        else:
+            for X_batch, y_batch in dataloader:
+                pred = net(X_batch)
+                loss = criterion(pred, y_batch).item()
+                running_loss += loss*y_batch.shape[0]
+                num_of_rows += y_batch.shape[0]
+            return running_loss / num_of_rows
 
 
 def training_loop(
@@ -45,8 +58,7 @@ def training_loop(
     net,
     X_train,
     y_train,
-    X_val,
-    y_val,
+    val_dataloader,
     criterion_func=nn.CrossEntropyLoss,
     optimizer_func=optim.SGD,
 ):
@@ -56,12 +68,16 @@ def training_loop(
     test_loss, untrained_test_loss = None, None
     # Note that I moved the inferences to a function because it was too much code duplication to read.
     # calculate error before training
-    untrained_test_loss = infer(net, X_val, y_val, criterion)
+    untrained_test_loss = infer(
+        net,  criterion, dataloader=val_dataloader)
     for epoch in range(args.num_epochs):
         net.train()
         running_tr_loss = 0
         data_size = len(X_train)
-        no_of_batches = data_size // args.batch_size
+        if(data_size % args.batch_size == 0):
+            no_of_batches = data_size // args.batch_size
+        else:
+            no_of_batches = (data_size // args.batch_size)+1
         for i in tqdm(range(no_of_batches)):
             start = i*args.batch_size
             end = i*args.batch_size + args.batch_size
@@ -72,10 +88,10 @@ def training_loop(
             loss = criterion(pred, y)
             loss.backward()
             optimizer.step()
-            running_tr_loss += loss*args.batch_size
+            running_tr_loss += loss*x.shape[0]
         tr_loss[epoch] = running_tr_loss.item() / data_size
 
-        val_loss[epoch] = infer(net, X_val, y_val, criterion)
+        val_loss[epoch] = infer(net, criterion, dataloader=val_dataloader)
         print(
             f"Train loss: {tr_loss[epoch]:.2e}, Val loss: {val_loss[epoch]:.2e}")
         if epoch >= args.early_stopping_num_epochs:
@@ -85,9 +101,8 @@ def training_loop(
             )
             if improvement < args.early_stopping_min_improvement:
                 break
-        # torch.save(net.state_dict(), f"my_net_{epoch}.pt")
 
-    test_loss = infer(net, X_val, y_val, criterion)
+    test_loss = infer(net, criterion, dataloader=val_dataloader)
     print(f"Stopped training after {epoch+1}/{args.num_epochs} epochs.")
     print(
         f"The loss is {untrained_test_loss:.2e} before training and {test_loss:.2e} after training."
@@ -96,37 +111,34 @@ def training_loop(
         f"The training and validation losses are "
         f"\n\t{tr_loss}, \n\t{val_loss}, \n\tover the training epochs, respectively."
     )
-    # torch.save(
-    #     {
-    #         "epoch": epoch,
-    #         "model_state_dict": net.state_dict(),
-    #         "optimizer_state_dict": optimizer.state_dict(),
-    #         "train_loss": tr_loss,
-    #         "validation_loss": val_loss,
-    #         "untrained_loss": untrained_test_loss,
-    #     },
-    #     "net_training_state.pt",
-    # )
     return tr_loss, val_loss, test_loss, untrained_test_loss
 
 
-def plot_loss_graph(loss_list, train_or_val: str):
+def plot_loss_graph(train_loss_list, validation_loss_list):
+    plt.plot(train_loss_list, 'g', label='Training loss')
+    plt.plot(validation_loss_list, 'b', label='validation loss')
+    plt.title('Training and Validation loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.show()
+    """
     loss_values = loss_list
     epochs = range(1, len(loss_values)+1)
     plt.plot(epochs, loss_values, label=f'{train_or_val} Loss by epoch')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
-    plt.show()
+    plt.show()"""
 
 
-def plot_auc_graph(auc, train_or_val: str):
-    epochs = range(1, len(auc)+1)
-    plt.plot(epochs, auc, label=f'{train_or_val} auc by epoch')
+def plot_auc_graph(auc_train_list, auc_val_list):
+    plt.plot(auc_train_list, 'g', label='Training loss')
+    plt.plot(auc_val_list, 'b', label='validation loss')
+    plt.title('Training and Validation AUC')
     plt.xlabel('Epochs')
-    plt.ylabel('auc')
+    plt.ylabel('AUC')
     plt.legend()
-
     plt.show()
 
 

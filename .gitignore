@@ -132,3 +132,5 @@ dmypy.json
 cifar/
 __pycache__/
 .vscode/
+cifar/
+cifar/*

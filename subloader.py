@@ -10,19 +10,9 @@ class SubLoader(torchvision.datasets.CIFAR10):
 
         if exclude_list == []:
             return
-
-        """if self.train:"""
         labels = np.array(self.targets)
         exclude = np.array(exclude_list).reshape(1, -1)
         mask = ~(labels.reshape(-1, 1) == exclude).any(axis=1)
-
         self.data = self.data[mask]
         self.targets = labels[mask].tolist()
         self.targets = list(map(lambda x: 1 if x == 5 else 0, self.targets))
-        """else:
-            labels = np.array(self.test_labels)
-            exclude = np.array(exclude_list).reshape(1, -1)
-            mask = ~(labels.reshape(-1, 1) == exclude).any(axis=1)
-
-            self.test_data = self.test_data[mask]
-            self.test_labels = labels[mask].tolist()"""
