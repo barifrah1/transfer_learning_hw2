@@ -69,7 +69,7 @@ if __name__ == '__main__':
     del exclude_labels['cat']
     exclude_labels = list(exclude_labels.values())
     tr_dataset = SubLoader(exclude_labels, "cifar",
-                           transform=train_transform, train=True, download=True)
+                           transform=train_transform, train=True, download=False)
     tr_dataloader = DataLoader(
         CIFAR10_DataLoader_Len_Limited(tr_dataset, int(800*2)), batch_size=args.batch_size
     )
@@ -80,6 +80,7 @@ if __name__ == '__main__':
     )
     classifyer = nn.Sequential(nn.Linear(512, 2))
     net = MyResNet(classifyer, 18)
+    #print('net',net)
     X_extracted_features_train = torch.empty([0, 512])
     y_extracted_features_train = torch.empty([0]).long()
     X_extracted_features_test = torch.empty([0, 512])
@@ -130,15 +131,63 @@ if __name__ == '__main__':
     # resnet34
     classifyer34 = nn.Sequential(nn.Linear(512, 2))
     net34 = MyResNet(classifyer34, 34)
+    X_extracted_features_train34 = torch.empty([0, 512])
+    y_extracted_features_train34 = torch.empty([0]).long()
+    X_extracted_features_test34 = torch.empty([0, 512])
+    y_extracted_features_test34 = torch.empty([0]).long()
+
+    for X, y in tr_dataloader:
+
+        extracted_batch_features = net.extract_features(X)
+        X_extracted_features_train34 = torch.cat(
+            [X_extracted_features_train34, extracted_batch_features], dim=0)
+        y_extracted_features_train34 = torch.cat(
+            [y_extracted_features_train34, y], dim=0)
+
+    for X, y in val_dataloader:
+        extracted_batch_features = net.extract_features(X)
+        X_extracted_features_test34 = torch.cat(
+            [X_extracted_features_test34, extracted_batch_features], dim=0)
+        y_extracted_features_test34 = torch.cat(
+            [y_extracted_features_test34, y], dim=0)
+    print(X_extracted_features_train34.shape)
+    print(X_extracted_features_test34.shape)
+
+    
     tr_loss34, val_loss34, test_loss34, tr_auc34, val_auc34, untrained_test_loss34, untrained_test_auc34 = training_loop(
         args,
         net34,
-        X_extracted_features_train,
-        y_extracted_features_train,
-        X_extracted_features_test,
-        y_extracted_features_test,
+        X_extracted_features_train34,
+        y_extracted_features_train34,
+        X_extracted_features_test34,
+        y_extracted_features_test34,
         val_dataloader=None,
         criterion_func=nn.CrossEntropyLoss
     )
     plot_loss_graph(tr_loss34, val_loss34)
     plot_auc_graph(tr_auc34, val_auc34)
+
+
+#net_param=net.features
+print('finetuning')
+ct = 0
+for child in net.children():
+    ct += 1
+    if ct < 7:
+        for param in child.parameters():
+            param.requires_grad = True
+        
+        
+args.lr=1e-4        
+tr_loss, val_loss, test_loss, tr_auc, val_auc, untrained_test_loss, untrained_test_auc = training_loop(
+args,
+net,
+X_extracted_features_train,
+y_extracted_features_train,
+X_extracted_features_test,
+y_extracted_features_test,
+val_dataloader=None,
+criterion_func=nn.CrossEntropyLoss
+)
+plot_loss_graph(tr_loss, val_loss)
+plot_auc_graph(tr_auc, val_auc)
