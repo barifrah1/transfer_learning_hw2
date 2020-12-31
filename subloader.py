@@ -3,6 +3,8 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 
+# a class that was made to take only the 'cat' and 'dog' labels
+
 
 class SubLoader(torchvision.datasets.CIFAR10):
     def __init__(self, exclude_list, *args, **kwargs):

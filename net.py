@@ -25,10 +25,22 @@ class MyResNet(nn.Module):
         # fc layer with softMax for classifying
         self.classifyer = classifyer
 
-    def extract_features(self, X):
+    def __extract_features__(self, X):
         self.features.eval()
         with torch.no_grad():
             return self.features(X)
+
+    def extract_features_from_dataloader(self, dataloader):
+        X_extracted_features = torch.empty([0, 512])
+        y_extracted_features = torch.empty([0]).long()
+        for X, y in dataloader:
+            extracted_batch_features = self.__extract_features__(X)
+            X_extracted_features = torch.cat(
+                [X_extracted_features, extracted_batch_features], dim=0)
+            y_extracted_features = torch.cat(
+                [y_extracted_features, y], dim=0)
+
+        return X_extracted_features, y_extracted_features
 
     def forward(self, X):
         if(len(X.shape) != 4):
@@ -38,7 +50,8 @@ class MyResNet(nn.Module):
             return self.classifyer(X)
 
 
-def infer(net, criterion, X=None, y=None, dataloader=None):  # can pass to function dataloader or X,y
+# can pass to function dataloader or X,y
+def infer(net, criterion, X=None, y=None, dataloader=None):
     net.eval()
     running_loss = 0
     running_auc = 0
@@ -67,12 +80,14 @@ def training_loop(
     y_train,
     X_test,
     y_test,
+    tr_dataloader=None,
     val_dataloader=None,
     criterion_func=nn.CrossEntropyLoss,
     optimizer_func=optim.SGD,
 ):
     criterion = criterion_func()
-    optimizer = optim.Adam(net.parameters(), lr=args.lr, weight_decay=1e-5)
+    optimizer = optim.Adam(net.parameters(), lr=args.lr,
+                           weight_decay=args.weight_decay)
     tr_loss, val_loss = [None] * args.num_epochs, [None] * args.num_epochs
     tr_auc, val_auc = [None] * args.num_epochs, [None] * args.num_epochs
     test_loss, untrained_test_loss = None, None
@@ -135,6 +150,72 @@ def training_loop(
     return tr_loss, val_loss, test_loss, tr_auc, val_auc, untrained_test_loss, untrained_test_auc
 
 
+def training_loop_with_dataloaders(
+    args,
+    net,
+    tr_dataloader=None,
+    val_dataloader=None,
+    criterion_func=nn.CrossEntropyLoss,
+    optimizer_func=optim.SGD,
+):
+    criterion = criterion_func()
+    optimizer = optim.Adam(net.parameters(), lr=args.lr,
+                           weight_decay=args.weight_decay)
+    tr_loss, val_loss = [None] * args.num_epochs, [None] * args.num_epochs
+    tr_auc, val_auc = [None] * args.num_epochs, [None] * args.num_epochs
+    test_loss, untrained_test_loss = None, None
+    test_auc, untrained_test_auc = None, None
+    # Note that I moved the inferences to a function because it was too much code duplication to read.
+    # calculate error before training
+    auc_and_loss = infer(
+        net,  criterion, X=None, y=None, dataloader=val_dataloader)
+    untrained_test_loss = auc_and_loss[0]
+    untrained_test_auc = auc_and_loss[1]
+    for epoch in range(args.num_epochs):
+        net.train()
+        running_tr_loss = 0
+        running_tr_auc = 0
+        for x, y in tr_dataloader:
+            print(1)
+            optimizer.zero_grad()
+            pred = net(x)
+            auc = roc_auc_score(y, pred.detach().numpy()[:, 1])
+            loss = criterion(pred, y)
+            loss.backward()
+            optimizer.step()
+            running_tr_loss += loss*x.shape[0]
+            running_tr_auc += auc*x.shape[0]
+
+        tr_loss[epoch] = running_tr_loss.item() / args.train_size
+        tr_auc[epoch] = running_tr_auc.item() / args.train_size
+        auc_and_loss = infer(
+            net, criterion, X=None, y=None, dataloader=val_dataloader)
+        val_loss[epoch] = auc_and_loss[0]
+        val_auc[epoch] = auc_and_loss[1]
+        print(
+            f"Train loss: {tr_loss[epoch]:.2e}, Val loss: {val_loss[epoch]:.2e}")
+        if epoch >= args.early_stopping_num_epochs:
+            improvement = (
+                val_loss[epoch - args.early_stopping_num_epochs] -
+                val_loss[epoch]
+            )
+            if improvement < args.early_stopping_min_improvement:
+                break
+    auc_and_loss = infer(net, criterion, X=None, y=None,
+                         dataloader=val_dataloader)
+    test_loss = auc_and_loss[0]
+    test_auc = auc_and_loss[1]
+    print(f"Stopped training after {epoch+1}/{args.num_epochs} epochs.")
+    print(
+        f"The loss is {untrained_test_loss:.2e} before training and {test_loss:.2e} after training."
+    )
+    print(
+        f"The training and validation losses are "
+        f"\n\t{tr_loss}, \n\t{val_loss}, \n\tover the training epochs, respectively."
+    )
+    return tr_loss, val_loss, test_loss, tr_auc, val_auc, untrained_test_loss, untrained_test_auc
+
+
 def plot_loss_graph(train_loss_list, validation_loss_list):
     plt.plot(train_loss_list, 'g', label='Training loss')
     plt.plot(validation_loss_list, 'b', label='validation loss')
@@ -142,15 +223,7 @@ def plot_loss_graph(train_loss_list, validation_loss_list):
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
     plt.legend()
-    plt.show()
-    """
-    loss_values = loss_list
-    epochs = range(1, len(loss_values)+1)
-    plt.plot(epochs, loss_values, label=f'{train_or_val} Loss by epoch')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.show()"""
+    plt.show(block=False)
 
 
 def plot_auc_graph(auc_train_list, auc_val_list):
@@ -160,7 +233,7 @@ def plot_auc_graph(auc_train_list, auc_val_list):
     plt.xlabel('Epochs')
     plt.ylabel('AUC')
     plt.legend()
-    plt.show()
+    plt.show(block=False)
 
 
 def plot_roc(fpr, tpr):
@@ -175,4 +248,4 @@ def plot_roc(fpr, tpr):
     plt.ylabel('True Positive Rate')
     plt.title('Roc curve on test set')
     plt.legend(loc="lower right")
-    plt.show()
+    plt.show(block=False)

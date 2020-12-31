@@ -13,10 +13,12 @@ class CIFAR10_DataLoader_Len_Limited(Dataset):
                                  for label in [0, 1]}
         # random.shuffle(self.label_to_indices[0])
         # random.shuffle(self.label_to_indices[1])
-        self.ind_0 = 0
-        self.ind_1 = 0
+        self.ind_0 = 0  # counter for label 0
+        self.ind_1 = 0  # couner for label 1
 
     def __getitem__(self, ind):
+        # In case we have already return more label 1 rows than label 0 rows, so the next row will be taken
+        # from the minority class
         if(self.ind_0 <= self.ind_1):
             next_ind = self.label_to_indices[0][self.ind_0]
             label = self.original_datset.targets[next_ind]
@@ -33,21 +35,9 @@ class CIFAR10_DataLoader_Len_Limited(Dataset):
                 self.ind_0 = 0
                 self.ind_1 = 0
             return self.original_datset[next_ind]
-            """oldLabel = self.original_datset.targets[ind]
-            if(self.LabelsCounter[oldLabel]+1 == self.LabelsCounter[oldLabel ^ 1]):
-                self.LabelsCounter[oldLabel] += 1
-                # self.label_to_indices[oldLabel].remove(ind)
-                return self.original_datset[ind]
-            if(oldLabel == 1):
-                newLabel = 0
-            else:
-                newLabel = 1
-            new_ind = np.random.choice(self.label_to_indices[newLabel])
-            self.LabelsCounter[newLabel] += 1
-            # self.label_to_indices[newLabel].remove(new_ind)
-            return self.original_datset[new_ind]"""
 
-    def __len__(self):
+    def __len__(self):  # return at most len_limit rows from the dataset
+        # we were asked to limit the number of training examples to do the training process more efficient
         if self.len_limit:
             return min(len(self.original_datset), self.len_limit)
         return len(self.original_datset)
