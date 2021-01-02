@@ -25,20 +25,22 @@ class MyResNet(nn.Module):
         # fc layer with softMax for classifying
         self.classifyer = classifyer
 
-    def __extract_features__(self, X):
+    """def __extract_features__(self, X):
         self.features.eval()
         with torch.no_grad():
-            return self.features(X)
+            return self.features(X)"""
 
     def extract_features_from_dataloader(self, dataloader):
         X_extracted_features = torch.empty([0, 512])
         y_extracted_features = torch.empty([0]).long()
-        for X, y in dataloader:
-            extracted_batch_features = self.__extract_features__(X)
-            X_extracted_features = torch.cat(
-                [X_extracted_features, extracted_batch_features], dim=0)
-            y_extracted_features = torch.cat(
-                [y_extracted_features, y], dim=0)
+        self.features.eval()
+        with torch.no_grad():
+            for X, y in dataloader:
+                extracted_batch_features = self.features(X)
+                X_extracted_features = torch.cat(
+                    [X_extracted_features, extracted_batch_features], dim=0)
+                y_extracted_features = torch.cat(
+                    [y_extracted_features, y], dim=0)
 
         return X_extracted_features, y_extracted_features
 
@@ -56,6 +58,7 @@ def infer(net, criterion, X=None, y=None, dataloader=None):
     running_loss = 0
     running_auc = 0
     num_of_rows = 0
+    train_on_gpu2 = torch.cuda.is_available()
     with torch.no_grad():
         if(dataloader == None):
             pred = net(X)
@@ -64,6 +67,8 @@ def infer(net, criterion, X=None, y=None, dataloader=None):
             return loss, auc
         else:
             for X_batch, y_batch in dataloader:
+                if train_on_gpu2:
+                    X_batch, y_batch = X_batch.cuda(), y_batch.cuda()
                 pred = net(X_batch)
                 loss = criterion(pred, y_batch).item()
                 auc = roc_auc_score(y_batch, pred.numpy()[:, 1])
@@ -85,6 +90,7 @@ def training_loop(
     criterion_func=nn.CrossEntropyLoss,
     optimizer_func=optim.SGD,
 ):
+    train_on_gpu = torch.cuda.is_available()
     criterion = criterion_func()
     optimizer = optim.Adam(net.parameters(), lr=args.lr,
                            weight_decay=args.weight_decay)
@@ -113,6 +119,9 @@ def training_loop(
             x = X_train[start:end]
             y = y_train[start:end]
             optimizer.zero_grad()
+            if train_on_gpu:
+                net.cuda()
+                x, y = x.cuda(), y.cuda()
             pred = net(x)
             auc = roc_auc_score(y, pred.detach().numpy()[:, 1])
             loss = criterion(pred, y)
@@ -129,6 +138,8 @@ def training_loop(
         val_auc[epoch] = auc_and_loss[1]
         print(
             f"Train loss: {tr_loss[epoch]:.2e}, Val loss: {val_loss[epoch]:.2e}")
+        print(
+            f"Best val loss is: {min(x for x in val_loss if x is not None):.2e}")
         if epoch >= args.early_stopping_num_epochs:
             improvement = (
                 val_loss[epoch - args.early_stopping_num_epochs] -
@@ -147,7 +158,7 @@ def training_loop(
         f"The training and validation losses are "
         f"\n\t{tr_loss}, \n\t{val_loss}, \n\tover the training epochs, respectively."
     )
-    return tr_loss, val_loss, test_loss, tr_auc, val_auc, untrained_test_loss, untrained_test_auc
+    return net, tr_loss, val_loss, test_loss, tr_auc, val_auc, untrained_test_loss, untrained_test_auc
 
 
 def training_loop_with_dataloaders(
@@ -157,8 +168,14 @@ def training_loop_with_dataloaders(
     val_dataloader=None,
     criterion_func=nn.CrossEntropyLoss,
     optimizer_func=optim.SGD,
+    fine_tune=False
 ):
+    train_on_gpu = torch.cuda.is_available()
+    num_of_params = 0
+    for par in net.features.parameters():
+        num_of_params += 1
     criterion = criterion_func()
+    #args.lr = args.lr * (0.01)
     optimizer = optim.Adam(net.parameters(), lr=args.lr,
                            weight_decay=args.weight_decay)
     tr_loss, val_loss = [None] * args.num_epochs, [None] * args.num_epochs
@@ -172,12 +189,15 @@ def training_loop_with_dataloaders(
     untrained_test_loss = auc_and_loss[0]
     untrained_test_auc = auc_and_loss[1]
     for epoch in range(args.num_epochs):
-        net.train()
+        net.eval()
         running_tr_loss = 0
         running_tr_auc = 0
         for x, y in tr_dataloader:
             print(1)
             optimizer.zero_grad()
+            if train_on_gpu:
+                net.cuda()
+                x, y = x_train.cuda(), y_train.cuda()
             pred = net(x)
             auc = roc_auc_score(y, pred.detach().numpy()[:, 1])
             loss = criterion(pred, y)
@@ -194,13 +214,16 @@ def training_loop_with_dataloaders(
         val_auc[epoch] = auc_and_loss[1]
         print(
             f"Train loss: {tr_loss[epoch]:.2e}, Val loss: {val_loss[epoch]:.2e}")
-        if epoch >= args.early_stopping_num_epochs:
+        print(
+            f"Best val loss is: {min(x for x in val_loss if x is not None):.2e}")
+        """if epoch >= args.early_stopping_num_epochs:
             improvement = (
                 val_loss[epoch - args.early_stopping_num_epochs] -
                 val_loss[epoch]
             )
             if improvement < args.early_stopping_min_improvement:
                 break
+        """
     auc_and_loss = infer(net, criterion, X=None, y=None,
                          dataloader=val_dataloader)
     test_loss = auc_and_loss[0]

@@ -128,7 +128,7 @@ if __name__ == '__main__':
     print('auc', auc_test)
 
     # logistic regression with pytorch and resnet18
-    tr_loss, val_loss, test_loss, tr_auc, val_auc, untrained_test_loss, untrained_test_auc = training_loop(
+    net_ft, tr_loss, val_loss, test_loss, tr_auc, val_auc, untrained_test_loss, untrained_test_auc = training_loop(
         args,
         net,
         X_extracted_features_train,
@@ -221,11 +221,6 @@ if __name__ == '__main__':
 
     # finetuning
 # net_param=net.features
-print('finetuning')
-i = 0
-for param in net.features.parameters():
-    param.requires_grad = True
-    #i += 1
 
 
 """ct = 0
@@ -235,13 +230,42 @@ for child in net.children():
         for param in child.parameters():
             param.requires_grad = True
 """
-args.lr = 1e-6
-tr_loss_ft, val_loss_ft, test_loss_ft, tr_auc_ft, val_auc_ft, untrained_test_loss_ft, untrained_test_auc_ft = training_loop_with_dataloaders(
+"""print('before finetuning')
+classifyer_ft = nn.Linear(512, 2)
+resnet18 = models.resnet18(pretrained=True)
+resnet18.fc = nn.Identity()
+net_ft = nn.Sequential(resnet18, classifyer_ft)
+for p in net_ft.resnet18.parameters():
+    p.requires_grad = False
+tr_loss2, val_loss2, test_loss2, tr_auc2, val_auc2, untrained_test_loss2, untrained_test_auc2 = training_loop(
     args,
     net,
+    X_extracted_features_train,
+    y_extracted_features_train,
+    X_extracted_features_test,
+    y_extracted_features_test,
+    val_dataloader=None,
+    criterion_func=nn.CrossEntropyLoss,
+)"""
+
+print('finetuning')
+i = 0
+"""for param in net_ft.features.parameters():
+    i += 1
+"""
+j = 0
+for param in net_ft.features.parameters():
+    if(j >= -1):
+        param.requires_grad = True
+    j += 1
+args.lr = args.lr_finetune
+tr_loss_ft, val_loss_ft, test_loss_ft, tr_auc_ft, val_auc_ft, untrained_test_loss_ft, untrained_test_auc_ft = training_loop_with_dataloaders(
+    args,
+    net_ft,
     tr_dataloader=tr_dataloader,
     val_dataloader=val_dataloader,
-    criterion_func=nn.CrossEntropyLoss
+    criterion_func=nn.CrossEntropyLoss,
+    fine_tune=True
 )
 plot_loss_graph(tr_loss_ft, val_loss_ft)
 plot_auc_graph(tr_auc_ft, val_auc_ft)
